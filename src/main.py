@@ -131,9 +131,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--location", "-loc", help="Location to check the weather forecast")
     parser.add_argument("--email", "-e", help="Email address to send the alert", required=True)
-    parser.add_argument("--time_window", "-tw", help="Number of days for forecast", required=False, default=7)
+    parser.add_argument("--time_window", "-tw", help="Number of days for forecast", required=False, default=7, choices=[7, 14])
     parser.add_argument("--sunny_threshold", "-st", help="Number of sunny days for alert", required=False, default=2)
     args = parser.parse_args()
+    assert args.sunny_threshold < args.time_window, "sunny_threshold must be less than time_window"
 
     logging.info(f"Now we are going to check the weather forcast for {args.location} in the next {args.time_window} days")
     logging.info(f"We will send an email if there are at least {args.sunny_threshold} sunny days")
@@ -144,10 +145,11 @@ if __name__ == "__main__":
     sunny_threshold = args.sunny_threshold
 
     weather_forecast = get_weather_forecast(location, time_window)
+    weather_forcast_body = "\n".join(weather_forecast)
     if check_sunny_days(weather_forecast):
         subject = f"Good weather notification for {location}"
         body = f"""There are at least {sunny_threshold} sunny days in the next {time_window} days.
-                The weather forecast is {weather_forecast}"""
+                The weather forecast is {weather_forcast_body}"""
         send_email(sender_email, sender_password, email, subject, body)
     logging.info("Email sent successfully")
 

@@ -1,20 +1,11 @@
 # Weather Bot
 
-A Python-based weather bot that checks the forecast for a specified location and sends email notifications for sunny days.
+A Python-based weather bot that helps you planning your getaways with good weather on your desired destination.
 
-## Features
+It currently does:
+1. checks the weather forecast for a specified location 
+2. sends email notification when the number of sunny days is greater than or equal to a specified threshold in the following 1 or 2 weeks.
 
-- Fetches 7-day or 14-day weather forecasts
-- Geocoding support for location input
-- Email notifications for sunny weather
-- Configurable sunny day threshold
-- Error handling and logging
-
-## Prerequisites
-
-- Python 3.7+
-- OpenWeatherMap API key
-- Gmail account for sending emails
 
 ## Installation
 
@@ -39,3 +30,12 @@ A Python-based weather bot that checks the forecast for a specified location and
 ## Usage
 
 Run the script with the following command:
+```
+python src/main.py --loc YOUR_DESTINATION --email YOUR_EMAIL --time_window NUM_OF_FOLLOWING_DAYS --sunny_threshold NUM_OF_MIN_SUNNY_DAYS
+```
+
+This command will check the weather forecast for London in the next 2 days and send an email notification if there are at least 2 sunny days.
+
+## Contributing
+
+We welcome contributions to improve the bot! If you have any suggestions or bug fixes, please open an issue or submit a pull request.
