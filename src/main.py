@@ -10,6 +10,9 @@ import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from geopy.geocoders import Nominatim
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, validator
+from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.INFO)
 
@@ -118,38 +121,71 @@ def send_email(sender_email, sender_password, target_email, subject, body):
     server.sendmail(sender_email, target_email, text)
     server.quit()
     
+# Add these new classes at the top of the file
+class Subscription(BaseModel):
+    email: str
+    location: str
+    sunny_threshold: int = 2
+    time_window: int = 7
+
+    @validator('time_window')
+    def must_be_7_or_14(cls, v):
+        if v not in [7, 14]:
+            raise ValueError('time_window must be either 7 or 14')
+        return v
+
+app = FastAPI()
+scheduler = BackgroundScheduler()
+subscriptions = []
+
+@app.post("/subscribe")
+async def subscribe(subscription: Subscription):
+    subscriptions.append(subscription)
+    # Test the subscription immediately
+    try:
+        await check_weather_for_single_subscription(subscription)
+        return {"message": "Subscription successful and initial check completed"}
+    except Exception as e:
+        logging.error(f"Subscription added but initial check failed: {str(e)}")
+        return {"message": "Subscription successful but initial check failed"}
+
+async def check_weather_for_single_subscription(subscription: Subscription):
+    weather_forecast = get_weather_forecast(
+        subscription.location, 
+        subscription.time_window
+    )
+    logging.info(f"Weather Forcast results: {weather_forecast}")
+    if check_sunny_days(weather_forecast, subscription.sunny_threshold):
+        subject = f'''Welcome to Getaway Weather: Good weather notification for {subscription.location}'''
+        body = f"""There are at least {subscription.sunny_threshold} sunny days in the next {subscription.time_window} days.
+                The weather forecast is:\n{'\n'.join(weather_forecast)}"""
+        sender_email = os.getenv("SENDER_EMAIL")
+        sender_password = os.getenv("SENDER_PASSWORD")
+        send_email(sender_email, sender_password, subscription.email, subject, body)
+
+def check_weather_for_subscribers():
+    logging.info(f"Checking weather for {len(subscriptions)} subscribers")
+    for subscription in subscriptions:
+        logging.info(f"Processing subscription for {subscription.email} in {subscription.location}")
+        weather_forecast = get_weather_forecast(
+            subscription.location, 
+            subscription.time_window
+        )
+        logging.info(f"Weather forecast: {weather_forecast}")
+        if check_sunny_days(weather_forecast, subscription.sunny_threshold):
+            logging.info("Sunny days threshold met, sending email")
+            subject = f"Good weather notification for {subscription.location}"
+            body = f"""There are at least {subscription.sunny_threshold} sunny days in the next {subscription.time_window} days.
+                    The weather forecast is:\n{'\n'.join(weather_forecast)}"""
+            sender_email = os.getenv("SENDER_EMAIL")
+            sender_password = os.getenv("SENDER_PASSWORD")
+            send_email(sender_email, sender_password, subscription.email, subject, body)
+
 # Main script
 if __name__ == "__main__":
-    logging.info("Starting the weather bot...")
-    logging.info("Loading authentications...")
     load_dotenv(override=True)
-    api_key = os.getenv('API_KEY_OPENWEATHER')
-    sender_email = os.getenv('GMAIL_USERNAME')
-    sender_password = os.getenv('GMAIL_PASSWORD')
-    logging.info("Authentications loaded successfully")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--location", "-loc", help="Location to check the weather forecast")
-    parser.add_argument("--email", "-e", help="Email address to send the alert", required=True)
-    parser.add_argument("--time_window", "-tw", help="Number of days for forecast", required=False, default=7, choices=[7, 14])
-    parser.add_argument("--sunny_threshold", "-st", help="Number of sunny days for alert", required=False, default=2)
-    args = parser.parse_args()
-    assert args.sunny_threshold < args.time_window, "sunny_threshold must be less than time_window"
-
-    logging.info(f"Now we are going to check the weather forcast for {args.location} in the next {args.time_window} days")
-    logging.info(f"We will send an email if there are at least {args.sunny_threshold} sunny days")
-
-    location = args.location
-    email = args.email
-    time_window = args.time_window
-    sunny_threshold = args.sunny_threshold
-
-    weather_forecast = get_weather_forecast(location, time_window)
-    weather_forcast_body = "\n".join(weather_forecast)
-    if check_sunny_days(weather_forecast):
-        subject = f"Good weather notification for {location}"
-        body = f"""There are at least {sunny_threshold} sunny days in the next {time_window} days.
-                The weather forecast is {weather_forcast_body}"""
-        send_email(sender_email, sender_password, email, subject, body)
-    logging.info("Email sent successfully")
+    scheduler.add_job(check_weather_for_subscribers, 'interval', hours=24)
+    scheduler.start()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
