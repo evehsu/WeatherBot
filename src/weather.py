@@ -4,6 +4,7 @@ import httpx
 from bs4 import BeautifulSoup
 from geopy.geocoders import Nominatim
 from functools import wraps
+from utils.logging_config import logger
 
 def error_handler(func):
     @wraps(func)
@@ -46,18 +47,32 @@ def get_7day_forecast(lat, lon):
 
 @error_handler
 def get_14day_forecast(lat, lon):
-    api_key = os.getenv('OPENWEATHERMAP_API_KEY')
-    if not api_key:
-        raise ValueError("OpenWeatherMap API key not found in environment variables")
-    
-    url = f"https://api.openweathermap.org/data/2.5/forecast/daily?lat={lat}&lon={lon}&cnt=14&appid={api_key}"
-    response = fetch_url(url).json()
-    
-    if response['cod'] != 200:
-        raise ValueError(f"API error: {response.get('message', 'Unknown error')}")
-    
-    forecast_data = response['list']
-    return [day['weather'][0]['main'].lower() for day in forecast_data]
+    try:
+        api_key = os.getenv('OPENWEATHERMAP_API_KEY')
+        if not api_key:
+            logger.error("API key not found")
+            raise ValueError("OpenWeatherMap API key not found")
+        
+        url = f"https://api.openweathermap.org/data/2.5/forecast/daily?lat={lat}&lon={lon}&cnt=14&appid={api_key}"
+        response = fetch_url(url).json()
+        
+        if response.get('cod') != '200':
+            logger.error("API error response", extra={
+                'error_code': response.get('cod'),
+                'error_message': response.get('message')
+            })
+            raise ValueError(f"API error: {response.get('message', 'Unknown error')}")
+        
+        forecast_data = response['list']
+        return [day['weather'][0]['main'].lower() for day in forecast_data]
+    except Exception as e:
+        logger.error("Failed to get 14-day forecast", extra={
+            'latitude': lat,
+            'longitude': lon,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+        raise
 
 def get_weather_forecast(location: str, time_window: int = 7):
     """
@@ -70,17 +85,44 @@ def get_weather_forecast(location: str, time_window: int = 7):
     Returns:
         list: Weather forecast for the specified number of days
     """
-    lat, lon = get_lat_lon(location)
-    if not lat or not lon:
-        logging.error(f"Could not find coordinates for location: {location}")
-        return []
+    try:
+        lat, lon = get_lat_lon(location)
+        if not lat or not lon:
+            logger.error("Could not find coordinates", extra={
+                'location': location
+            })
+            return []
 
-    if time_window == 7:
-        return get_7day_forecast(lat, lon)
-    elif time_window == 14:
-        return get_14day_forecast(lat, lon)
-    else:
-        logging.error(f"Invalid time window: {time_window}. Must be 7 or 14.")
+        logger.info("Retrieved coordinates", extra={
+            'location': location,
+            'latitude': lat,
+            'longitude': lon
+        })
+
+        if time_window == 7:
+            forecast = get_7day_forecast(lat, lon)
+        elif time_window == 14:
+            forecast = get_14day_forecast(lat, lon)
+        else:
+            logger.error("Invalid time window", extra={
+                'location': location,
+                'time_window': time_window
+            })
+            return []
+
+        logger.info("Weather forecast retrieved", extra={
+            'location': location,
+            'time_window': time_window,
+            'forecast': forecast
+        })
+        return forecast
+    except Exception as e:
+        logger.error("Failed to get weather forecast", extra={
+            'location': location,
+            'time_window': time_window,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
         return []
 
 def check_sunny_days(weather_list: list[str], sunny_threshold: int = 2) -> bool:

@@ -6,43 +6,53 @@ from weather import get_weather_forecast, check_sunny_days
 from notification import send_email
 from database import save_subscriber, get_subscriber_by_email, get_all_subscribers
 from subscribe_objects import Subscriber, Subscription
+from utils.logging_config import logger
 
 def manage_subscription(subscription: Subscription) -> Subscriber:
-    # Get existing subscriber data if it exists
-    existing_subscriber = get_subscriber_by_email(subscription.email)
-    
-    # Prepare new destinations and their corresponding thresholds/windows
-    new_destinations = subscription.locations
-    
-    if existing_subscriber:
-        # Update existing subscriber's data
-        # Combine existing and new destinations, keeping most recent ones first
-        combined_destinations = [
-            dest for dest in existing_subscriber.user_destination 
-            if dest not in new_destinations
-        ] + new_destinations
-        # Limit to allowed number of destinations
-
-        combined_destinations = combined_destinations[-existing_subscriber.num_allowed_destination:]
+    try:
+        existing_subscriber = get_subscriber_by_email(subscription.email)
+        new_destinations = subscription.locations
         
-        subscriber = Subscriber(
-            user_email=subscription.email,
-            user_destination=combined_destinations,
-            sunny_threshold=[subscription.sunny_threshold] * len(combined_destinations),
-            time_window=[subscription.time_window] * len(combined_destinations)
-        )
-    else:
-        # Create new subscriber
-        subscriber = Subscriber(
-            user_email=subscription.email,
-            user_destination=new_destinations,
-            sunny_threshold=[subscription.sunny_threshold] * len(new_destinations),
-            time_window=[subscription.time_window] * len(new_destinations)
-        )
-    
-    # Save to database
-    save_subscriber(subscriber)
-    return subscriber
+        logger.info("Managing subscription", extra={
+            'email': subscription.email,
+            'new_destinations': new_destinations,
+            'existing_subscriber': bool(existing_subscriber)
+        })
+
+        if existing_subscriber:
+            combined_destinations = [
+                dest for dest in existing_subscriber.user_destination 
+                if dest not in new_destinations
+            ] + new_destinations
+            combined_destinations = combined_destinations[-existing_subscriber.num_allowed_destination:]
+            
+            subscriber = Subscriber(
+                user_email=subscription.email,
+                user_destination=combined_destinations,
+                sunny_threshold=[subscription.sunny_threshold] * len(combined_destinations),
+                time_window=[subscription.time_window] * len(combined_destinations)
+            )
+        else:
+            subscriber = Subscriber(
+                user_email=subscription.email,
+                user_destination=new_destinations,
+                sunny_threshold=[subscription.sunny_threshold] * len(new_destinations),
+                time_window=[subscription.time_window] * len(new_destinations)
+            )
+        
+        save_subscriber(subscriber)
+        logger.info("Subscription managed successfully", extra={
+            'email': subscription.email,
+            'final_destinations': subscriber.user_destination
+        })
+        return subscriber
+    except Exception as e:
+        logger.error("Failed to manage subscription", extra={
+            'email': subscription.email,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+        raise
 
 async def check_weather_for_single_subscription(subscription: Subscription):
     subscriber = manage_subscription(subscription)

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import json
 from subscribe_objects import Subscriber
 import os
+from utils.logging_config import logger
 
 @contextmanager
 def get_db_connection():
@@ -31,20 +32,32 @@ def init_db():
 
 def save_subscriber(subscriber: Subscriber):
     """Save or update a subscriber in the database"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-        INSERT OR REPLACE INTO subscribers 
-        (user_email, user_destination, sunny_threshold, time_window, num_allowed_destination)
-        VALUES (?, ?, ?, ?, ?)
-        ''', (
-            subscriber.user_email,
-            json.dumps(subscriber.user_destination),
-            json.dumps(subscriber.sunny_threshold),
-            json.dumps(subscriber.time_window),
-            subscriber.num_allowed_destination
-        ))
-        conn.commit()
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            INSERT OR REPLACE INTO subscribers 
+            (user_email, user_destination, sunny_threshold, time_window, num_allowed_destination)
+            VALUES (?, ?, ?, ?, ?)
+            ''', (
+                subscriber.user_email,
+                json.dumps(subscriber.user_destination),
+                json.dumps(subscriber.sunny_threshold),
+                json.dumps(subscriber.time_window),
+                subscriber.num_allowed_destination
+            ))
+            conn.commit()
+            logger.info("Subscriber saved successfully", extra={
+                'email': subscriber.user_email,
+                'destinations': subscriber.user_destination
+            })
+    except Exception as e:
+        logger.error("Failed to save subscriber", extra={
+            'email': subscriber.user_email,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+        raise
 
 def get_all_subscribers(verbose = False) -> List[Subscriber]:
     """Retrieve all subscribers from the database"""
@@ -69,17 +82,32 @@ def get_all_subscribers(verbose = False) -> List[Subscriber]:
 
 def get_subscriber_by_email(email: str) -> Subscriber | None:
     """Retrieve a specific subscriber by email"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM subscribers WHERE user_email = ?', (email,))
-        row = cursor.fetchone()
-        
-        if row:
-            return Subscriber(
-                user_email=row[0],
-                user_destination=json.loads(row[1]),
-                sunny_threshold=json.loads(row[2]),
-                time_window=json.loads(row[3]),
-                num_allowed_destination=row[4]
-            )
-        return None 
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM subscribers WHERE user_email = ?', (email,))
+            row = cursor.fetchone()
+            
+            if row:
+                subscriber = Subscriber(
+                    user_email=row[0],
+                    user_destination=json.loads(row[1]),
+                    sunny_threshold=json.loads(row[2]),
+                    time_window=json.loads(row[3]),
+                    num_allowed_destination=row[4]
+                )
+                logger.info("Subscriber retrieved successfully", extra={
+                    'email': email,
+                    'destinations': subscriber.user_destination
+                })
+                return subscriber
+            
+            logger.info("Subscriber not found", extra={'email': email})
+            return None
+    except Exception as e:
+        logger.error("Failed to retrieve subscriber", extra={
+            'email': email,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+        raise
